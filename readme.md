@@ -24,6 +24,7 @@ Haptics seem to use several report ids in the range `0x81 - 0x89`.
 ## Misc notes
 
 - SDL refers to the 2026 Steam Controller as Triton. Ibex may have been the codename for an older revision.
+- HID descriptor for puck (on controller interfaces) and controller is identical.
 
 ## TODO
 

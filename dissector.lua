@@ -37,13 +37,20 @@ local feature_report_message_ids = {
   [ID_TRIGGER_HAPTIC_PULSE] = 'ID_TRIGGER_HAPTIC_PULSE',
 }
 
+-- from HID descriptor, lizard mode reports
+local ID_TRITON_LIZARD_MOUSE = 0x40
+local ID_TRITON_LIZARD_KEYBOARD = 0x41
 -- from SDL: enum ETritonReportIDTypes
 local ID_TRITON_CONTROLLER_STATE = 0x42 -- doesn't seem to be used?
 local ID_TRITON_BATTERY_STATUS = 0x43
+-- note: report id 0x44 is reported in HID descriptor
 local ID_TRITON_CONTROLLER_STATE_BLE = 0x45
 local ID_TRITON_WIRELESS_STATUS_X = 0x46
+-- note: according to SDL this one is sent with touchpad TS but I haven't actually
+-- seen it get sent
 local ID_TRITON_CONTROLLER_STATE_TIMESTAMP = 0x47
 local ID_TRITON_WIRELESS_STATUS = 0x79
+-- note: 0x7B is sent only when using the puck, seems to also be wireless status
 
 -- from SDL: enum ValveTritonOutReportMessageIDs
 local ID_OUT_REPORT_HAPTIC_RUMBLE = 0x80
@@ -52,8 +59,11 @@ local ID_OUT_REPORT_HAPTIC_COMMAND = 0x82
 local ID_OUT_REPORT_HAPTIC_LFO_TONE = 0x83
 local ID_OUT_REPORT_HAPTIC_LOG_SWEEP = 0x84
 local ID_OUT_REPORT_HAPTIC_SCRIPT = 0x85
+-- note: HID descriptor reports 0x86-0x89 as output reports as well
 
 local interrupt_report_ids = {
+  [ID_TRITON_LIZARD_MOUSE] = 'ID_TRITON_LIZARD_MOUSE',
+  [ID_TRITON_LIZARD_KEYBOARD] = 'ID_TRITON_LIZARD_KEYBOARD',
   [ID_TRITON_CONTROLLER_STATE] = 'ID_TRITON_CONTROLLER_STATE',
   [ID_TRITON_BATTERY_STATUS] = 'ID_TRITON_BATTERY_STATUS',
   [ID_TRITON_CONTROLLER_STATE_BLE] = 'ID_TRITON_CONTROLLER_STATE_BLE',
@@ -363,6 +373,13 @@ local function dissect_interrupt_report_payload(direction, tvb, pinfo, root)
     ))
 
     pinfo.cols.info = table.concat(info_text, ' ')
+  elseif report_id == ID_TRITON_LIZARD_KEYBOARD then
+    -- send lizard mode to native dissector
+    pinfo.cols.info = 'Lizard mode keyboard'
+    return 0
+  elseif report_id == ID_TRITON_LIZARD_MOUSE then
+    pinfo.cols.info = 'Lizard mode mouse'
+    return 0
   else
     tree:add(f_interrupt_report_unknown_body, tvb(1))
   end
