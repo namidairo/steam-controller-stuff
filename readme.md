@@ -21,8 +21,13 @@ Haptics seem to use several report ids in the range `0x81 - 0x89`.
 
 `0x7B` is sent by the controller periodically only when using the puck.
 
+## Misc notes
+
+- SDL refers to the 2026 Steam Controller as Triton. Ibex may have been the codename for an older revision.
+
 ## TODO
 
+- wireshark PR, perhaps: <https://gitlab.com/wireshark/wireshark/-/merge_requests/25464>
 - write wireshark dissector
 - figure out config set_report format
 - figure out haptics output format

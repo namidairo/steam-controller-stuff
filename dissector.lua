@@ -1,0 +1,308 @@
+local hid_sctrl = Proto('hid_sctrl', 'HID Steam Controller')
+
+-- from SDL enum FeatureReportMessageIDs
+local ID_SET_DIGITAL_MAPPINGS = 0x80
+local ID_CLEAR_DIGITAL_MAPPINGS = 0x81
+local ID_GET_DIGITAL_MAPPINGS = 0x82
+local ID_GET_ATTRIBUTES_VALUES = 0x83
+local ID_GET_ATTRIBUTE_LABEL = 0x84
+local ID_SET_DEFAULT_DIGITAL_MAPPINGS = 0x85
+local ID_FACTORY_RESET = 0x86
+local ID_SET_SETTINGS_VALUES = 0x87
+local ID_CLEAR_SETTINGS_VALUES = 0x88
+local ID_GET_SETTINGS_VALUES = 0x89
+local ID_GET_SETTING_LABEL = 0x8A
+local ID_GET_SETTINGS_MAXS = 0x8B
+local ID_GET_SETTINGS_DEFAULTS = 0x8C
+local ID_SET_CONTROLLER_MODE = 0x8D
+local ID_LOAD_DEFAULT_SETTINGS = 0x8E
+local ID_TRIGGER_HAPTIC_PULSE = 0x8F
+
+local feature_report_message_ids = {
+  [ID_SET_DIGITAL_MAPPINGS] = 'ID_SET_DIGITAL_MAPPINGS',
+  [ID_CLEAR_DIGITAL_MAPPINGS] = 'ID_CLEAR_DIGITAL_MAPPINGS',
+  [ID_GET_DIGITAL_MAPPINGS] = 'ID_GET_DIGITAL_MAPPINGS',
+  [ID_GET_ATTRIBUTES_VALUES] = 'ID_GET_ATTRIBUTES_VALUES',
+  [ID_GET_ATTRIBUTE_LABEL] = 'ID_GET_ATTRIBUTE_LABEL',
+  [ID_SET_DEFAULT_DIGITAL_MAPPINGS] = 'ID_SET_DEFAULT_DIGITAL_MAPPINGS',
+  [ID_FACTORY_RESET] = 'ID_FACTORY_RESET',
+  [ID_SET_SETTINGS_VALUES] = 'ID_SET_SETTINGS_VALUES',
+  [ID_CLEAR_SETTINGS_VALUES] = 'ID_CLEAR_SETTINGS_VALUES',
+  [ID_GET_SETTINGS_VALUES] = 'ID_GET_SETTINGS_VALUES',
+  [ID_GET_SETTING_LABEL] = 'ID_GET_SETTING_LABEL',
+  [ID_GET_SETTINGS_MAXS] = 'ID_GET_SETTINGS_MAXS',
+  [ID_GET_SETTINGS_DEFAULTS] = 'ID_GET_SETTINGS_DEFAULTS',
+  [ID_SET_CONTROLLER_MODE] = 'ID_SET_CONTROLLER_MODE',
+  [ID_LOAD_DEFAULT_SETTINGS] = 'ID_LOAD_DEFAULT_SETTINGS',
+  [ID_TRIGGER_HAPTIC_PULSE] = 'ID_TRIGGER_HAPTIC_PULSE',
+}
+
+-- from SDL: enum ETritonReportIDTypes
+local ID_TRITON_CONTROLLER_STATE = 0x42 -- doesn't seem to be used?
+local ID_TRITON_BATTERY_STATUS = 0x43
+local ID_TRITON_CONTROLLER_STATE_BLE = 0x45
+local ID_TRITON_WIRELESS_STATUS_X = 0x46
+local ID_TRITON_CONTROLLER_STATE_TIMESTAMP = 0x47
+local ID_TRITON_WIRELESS_STATUS = 0x79
+
+-- from SDL: enum ValveTritonOutReportMessageIDs
+local ID_OUT_REPORT_HAPTIC_RUMBLE = 0x80
+local ID_OUT_REPORT_HAPTIC_PULSE = 0x81
+local ID_OUT_REPORT_HAPTIC_COMMAND = 0x82
+local ID_OUT_REPORT_HAPTIC_LFO_TONE = 0x83
+local ID_OUT_REPORT_HAPTIC_LOG_SWEEP = 0x84
+local ID_OUT_REPORT_HAPTIC_SCRIPT = 0x85
+
+local interrupt_report_ids = {
+  [ID_TRITON_CONTROLLER_STATE] = 'ID_TRITON_CONTROLLER_STATE',
+  [ID_TRITON_BATTERY_STATUS] = 'ID_TRITON_BATTERY_STATUS',
+  [ID_TRITON_CONTROLLER_STATE_BLE] = 'ID_TRITON_CONTROLLER_STATE_BLE',
+  [ID_TRITON_WIRELESS_STATUS_X] = 'ID_TRITON_WIRELESS_STATUS_X',
+  [ID_TRITON_CONTROLLER_STATE_TIMESTAMP] = 'ID_TRITON_CONTROLLER_STATE_TIMESTAMP',
+  [ID_TRITON_WIRELESS_STATUS] = 'ID_TRITON_WIRELESS_STATUS',
+
+  [ID_OUT_REPORT_HAPTIC_RUMBLE] = 'ID_OUT_REPORT_HAPTIC_RUMBLE',
+  [ID_OUT_REPORT_HAPTIC_PULSE] = 'ID_OUT_REPORT_HAPTIC_PULSE',
+  [ID_OUT_REPORT_HAPTIC_COMMAND] = 'ID_OUT_REPORT_HAPTIC_COMMAND',
+  [ID_OUT_REPORT_HAPTIC_LFO_TONE] = 'ID_OUT_REPORT_HAPTIC_LFO_TONE',
+  [ID_OUT_REPORT_HAPTIC_LOG_SWEEP] = 'ID_OUT_REPORT_HAPTIC_LOG_SWEEP',
+  [ID_OUT_REPORT_HAPTIC_SCRIPT] = 'ID_OUT_REPORT_HAPTIC_SCRIPT',
+}
+
+local setting_ids = {
+  [0x09] = 'SETTING_LIZARD_MODE',
+}
+
+local f_feature_report_id = ProtoField.uint8('hid_sctrl.setup.feature_report_id', 'Feature report ID', base.HEX)
+local f_feature_report_header = ProtoField.uint16('hid_sctrl.setup.feature_report_header', 'Feature report header', base.HEX)
+local f_feature_report_type = ProtoField.uint8('hid_sctrl.setup.feature_report_header.message_id', 'Feature report message ID', base.HEX, feature_report_message_ids)
+local f_feature_report_length = ProtoField.uint8('hid_sctrl.setup.feature_report_header.length', 'Feature report length', base.DEC)
+local f_feature_report_unknown_body = ProtoField.bytes('hid_sctrl.setup.feature_report_unknown_body', 'Unknown feature report payload')
+
+local f_setting_number = ProtoField.uint8('hid_sctrl.setting.number', 'Setting number', base.HEX, setting_ids)
+local f_setting_value = ProtoField.uint16('hid_sctrl.setting.value', 'Setting value', base.DEC)
+
+local f_interrupt_report_id = ProtoField.uint8('hid_sctrl.report_id', 'Report ID', base.HEX, interrupt_report_ids)
+local f_interrupt_report_unknown_body = ProtoField.bytes('hid_sctrl.unknown_report_body', 'Unknown report payload')
+
+local f_controller_state = ProtoField.bytes('hid_sctrl.state', 'Controller state', base.NONE)
+local f_state_seqno = ProtoField.uint8('hid_ctrl.state.seq', 'Sequence number', base.DEC)
+local f_buttons_bitfield = ProtoField.uint32('hid_sctrl.state.buttons', 'Button state', base.HEX)
+
+local fields_table = {
+  f_feature_report_id,
+  f_feature_report_header,
+  f_feature_report_type,
+  f_feature_report_length,
+  f_feature_report_unknown_body,
+
+  f_setting_number,
+  f_setting_value,
+
+  f_interrupt_report_id,
+  f_interrupt_report_unknown_body,
+
+  f_controller_state,
+  f_state_seqno,
+  f_buttons_bitfield,
+}
+
+local buttons_bit_table = {}
+local function register_button_bit(bit_idx, friendly_name, field_name, short_name)
+  local mask = 1 << bit_idx
+  local field = ProtoField.bool('hid_sctrl.state.buttons.' .. field_name, friendly_name, 32, nil, mask)
+  table.insert(fields_table, field)
+  table.insert(buttons_bit_table, {
+    bit_idx = bit_idx,
+    mask = mask,
+    friendly_name = friendly_name,
+    field_name = field_name,
+    short_name = short_name,
+    field = field,
+  })
+end
+
+register_button_bit(0, 'A', 'a', 'A')
+register_button_bit(1, 'B', 'b', 'B')
+register_button_bit(2, 'X', 'x', 'X')
+register_button_bit(3, 'Y', 'y', 'Y')
+register_button_bit(4, 'Quick-access menu', 'qam', 'QAM')
+register_button_bit(5, 'Right stick press', 'r3', 'R3')
+register_button_bit(6, 'View', 'view', 'VIEW')
+register_button_bit(7, 'R4', 'r4', 'R4')
+register_button_bit(8, 'R5', 'r5', 'R5')
+register_button_bit(9, 'Right bumper', 'rb', 'RB')
+register_button_bit(10, 'D-pad down', 'd_pad_down', 'DPD')
+register_button_bit(11, 'D-pad right', 'd_pad_right', 'DPR')
+register_button_bit(12, 'D-pad left', 'd_pad_left', 'DPL')
+register_button_bit(13, 'D-pad up', 'd_pad_up', 'DPU')
+register_button_bit(14, 'Menu', 'menu', 'MENU')
+register_button_bit(15, 'Left stick press', 'l3', 'L3')
+register_button_bit(16, 'Steam', 'steam', 'STEAM')
+register_button_bit(17, 'L4', 'l4', 'L4')
+register_button_bit(18, 'L5', 'l5', 'L5')
+register_button_bit(19, 'Left bumper', 'lb', 'LB')
+register_button_bit(20, 'Right stick touch', 'right_stick_touch', 'RST')
+register_button_bit(21, 'Right pad touch', 'right_pad_touch', 'RPT')
+register_button_bit(22, 'Right pad press', 'right_pad_press', 'RPP')
+register_button_bit(23, 'Right trigger click', 'rt', 'RT')
+register_button_bit(24, 'Left stick touch', 'left_stick_touch', 'LST')
+register_button_bit(25, 'Left pad touch', 'left_pad_touch', 'LPT')
+register_button_bit(26, 'Left pad press', 'left_pad_press', 'LPP')
+register_button_bit(27, 'Left trigger click', 'lt', 'LT')
+register_button_bit(28, 'Right grip sense', 'right_grip', 'RG')
+register_button_bit(29, 'Left grip sense', 'left_grip', 'LG')
+
+hid_sctrl.fields = fields_table
+
+local URB_INTERRUPT = 1
+local URB_CONTROL = 2
+local GET_REPORT = 1
+local SET_REPORT = 9
+local REPORT_TYPE_FEATURE = 3
+local ENDPOINT_DIRECTION_IN = 1
+local ENDPOINT_DIRECTION_OUT = 0
+
+local GET_FEATURE_REPORT_RESPONSE = 'GET_FEATURE_REPORT_RESPONSE'
+
+local usb_urb_id = Field.new('usb.urb_id')
+local usb_irp_id = Field.new('usb.irp_id')
+local usb_direction = Field.new('usb.endpoint_address.direction')
+local urb_transfer_type = Field.new('usb.transfer_type')
+local hid_bRequest = Field.new('usbhid.setup.bRequest')
+local hid_report_type = Field.new('usbhid.setup.ReportType')
+local hid_setup_report_id = Field.new('usbhid.setup.ReportID')
+
+local function dissect_feature_report_payload(tvb, pinfo, root, is_set)
+  if tvb:len() < 2 then return end
+
+  local tree = root:add(hid_sctrl, tvb(), 'Steam Controller HID Feature Report')
+  -- multiple feature report ids are defined so first byte is report id
+  tree:add(f_feature_report_id, tvb(0, 1))
+  local header = tree:add(f_feature_report_header, tvb(1, 2))
+  local _, type = header:add_packet_field(f_feature_report_type, tvb(1, 1), ENC_BIG_ENDIAN)
+  local _, length = header:add_packet_field(f_feature_report_length, tvb(2, 1), ENC_BIG_ENDIAN)
+  tree:set_len(length + 3)
+
+  if is_set then
+    pinfo.cols.info = string.format('Set Feature Report (0x%X)', type)
+  else
+    pinfo.cols.info = string.format('Get Feature Report Response (0x%X)', type)
+  end
+
+  if type == ID_SET_SETTINGS_VALUES then
+    local setting_tree = tree:add(tvb(3, length), 'Set settings')
+    local offset = 0
+    while offset + 3 <= length do
+      setting_tree:add(f_setting_number, tvb(3 + offset, 1))
+      setting_tree:add(f_setting_value, tvb(3 + offset + 1, 2))
+      offset = offset + 3
+    end
+  elseif type == ID_GET_SETTINGS_VALUES then
+    local setting_tree = tree:add(tvb(3, length), 'Get settings')
+    local offset = 0
+    while offset + 3 <= length do
+      setting_tree:add(f_setting_number, tvb(3 + offset, 1))
+      -- ???
+      setting_tree:add(f_setting_value, tvb(3 + offset + 1, 2))
+      offset = offset + 3
+    end
+  elseif length > 0 then
+    -- unknown type
+    tree:add(f_feature_report_unknown_body, tvb(3, length))
+  end
+end
+
+local pending_get_reports = {}
+local frame_local_info = {}
+
+function hid_sctrl.init()
+  pending_get_reports = {}
+  frame_local_info = {}
+  print('loaded hid_sctrl dissector')
+end
+
+local function get_usb_id()
+  local urb_id = usb_urb_id()
+  if urb_id ~= nil then return tostring(urb_id.value) end
+  local irp_id = usb_irp_id()
+  if irp_id ~= nil then return tostring(irp_id.value) end
+  error('cannot find usb id field')
+end
+
+local function dissect_interrupt_report_payload(direction, tvb, pinfo, root)
+  local dir_s = direction == ENDPOINT_DIRECTION_IN and 'Input' or 'Output'
+  local tree = root:add(hid_sctrl, tvb:range(), 'Steam Controller HID ' .. dir_s .. ' Report')
+  local _, report_id = tree:add_packet_field(f_interrupt_report_id, tvb(0, 1), ENC_BIG_ENDIAN)
+  pinfo.cols.info = string.format('%s Report (0x%X)', dir_s, report_id)
+
+  if report_id == ID_TRITON_CONTROLLER_STATE_BLE then
+    local offset = 1
+    local state = tree:add(f_controller_state, tvb(offset, 45))
+    state:add(f_state_seqno, tvb(offset, 1))
+    offset = offset + 1
+    local buttons, buttons_bitfield = state:add_packet_field(f_buttons_bitfield, tvb(offset, 4), ENC_LITTLE_ENDIAN)
+    local pressed_buttons = {}
+    for _, button in ipairs(buttons_bit_table) do
+      buttons:add_le(button.field, tvb(offset, 4))
+
+      if buttons_bitfield & button.mask > 0 then
+        table.insert(pressed_buttons, button.short_name)
+      end
+    end
+    offset = offset + 4
+
+    pinfo.cols.info = string.format('State: [%s]', table.concat(pressed_buttons, ' '))
+  else
+    tree:add(f_interrupt_report_unknown_body, tvb(1))
+  end
+end
+
+local function dissector(tvb, pinfo, root)
+  local transfer_type = urb_transfer_type().value
+  local direction = usb_direction().value
+
+  if transfer_type == URB_CONTROL then
+    -- seems to only use report id 1 for feature reports
+    local request_type = hid_bRequest()
+    if request_type == nil then
+      -- probably a response
+      local usb_id = get_usb_id()
+      if pending_get_reports[usb_id] ~= nil then
+        pending_get_reports[usb_id] = nil
+        frame_local_info[pinfo.number] = GET_FEATURE_REPORT_RESPONSE
+      end
+      if frame_local_info[pinfo.number] == GET_FEATURE_REPORT_RESPONSE then
+        return dissect_feature_report_payload(tvb, pinfo, root, false)
+      end
+    elseif request_type.value == GET_REPORT and hid_report_type().value == REPORT_TYPE_FEATURE then
+      if not pinfo.visited then
+        local usb_id = get_usb_id()
+        pending_get_reports[usb_id] = hid_setup_report_id().value
+      end
+    elseif request_type.value == SET_REPORT and hid_report_type().value == REPORT_TYPE_FEATURE then
+      return dissect_feature_report_payload(tvb, pinfo, root, true)
+    end
+  elseif transfer_type == URB_INTERRUPT then
+    return dissect_interrupt_report_payload(direction, tvb, pinfo, root)
+  end
+
+  -- ignore?
+  return 0
+end
+
+function hid_sctrl.dissector(tvb, pinfo, root)
+  local status, ret = pcall(dissector, tvb, pinfo, root)
+  if not status then
+    print('dissector error: ' .. ret)
+    return
+  else
+    return ret
+  end
+end
+
+local usb_product_table = DissectorTable.get('usbhid.product')
+-- 28de:1302 Valve Steam Controller
+-- 28de:1304 Valve Steam Controller Puck
+usb_product_table:add(0x28de1302, hid_sctrl)
+usb_product_table:add(0x28de1304, hid_sctrl)
