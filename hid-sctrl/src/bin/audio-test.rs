@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use bytes::Bytes;
 use clap::Parser;
@@ -103,6 +104,9 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
         }
     });
 
+    // HACK: wait for reader to actually read some data
+    std::thread::sleep(Duration::from_millis(100));
+
     let mut next_streamer = 0;
 
     loop {
@@ -149,7 +153,8 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
             }
         }
 
-        if tick_counter.is_multiple_of(2) {
+        // HACK: idk
+        if tick_counter > 32 || tick_counter.is_multiple_of(2) {
             // TODO: less shit code?
             for _ in 0..streamers.len() {
                 let len = streamers[next_streamer].poll_send(&mut out_buf);
@@ -167,8 +172,17 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
 
         if tick_counter == 0 {
             // configure for 8khz s16le pcm, both INT_LEFT and INT_RIGHT
+            // seems like you have to send this after enqueueing some data or the
+            // "needs more data" bit never arrives
             hid_set_output_report(&hidraw, &[0x86, 0x02, 0x02, 0x00])
                 .wrap_err("configuring stream")?;
+        }
+
+        // HACK: if you don't do this for some reason it never sends "needs more data" either
+        if tick_counter < 32 {
+            for s in &mut streamers {
+                s.cork = false;
+            }
         }
 
         if streamers.iter().all(|s| s.ended) {
