@@ -8,6 +8,11 @@ Place to document the protocol of the new Steam Controller (apparently codenamed
 - Convert audio file to 8 kHZ s16le PCM: `ffmpeg -i <your-audio-file> -f s16le -c:a pcm_s16le -ar 8000 -ac 2 output.pcm`
 - Run the stupid thing: `RUST_LOG=trace cargo run --bin audio-test -- test-audio /dev/hidrawN output.pcm` (replace `hidrawN` with the correct device node)
 
+Problems:
+
+- huge pile of hacks
+- only works when wired probably because pcm s16le is simply too much bandwidth
+  - maybe try pcm s8 or ulaw instead?
 
 ## Useful links to other projects
 
