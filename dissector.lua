@@ -67,7 +67,14 @@ local ID_OUT_REPORT_HAPTIC_COMMAND = 0x82
 local ID_OUT_REPORT_HAPTIC_LFO_TONE = 0x83
 local ID_OUT_REPORT_HAPTIC_LOG_SWEEP = 0x84
 local ID_OUT_REPORT_HAPTIC_SCRIPT = 0x85
--- note: HID descriptor reports 0x86-0x89 as output reports as well
+-- not from SDL
+local ID_OUT_REPORT_STREAM_CONFIGURE = 0x86
+-- push data for one actuator, full length
+local ID_OUT_REPORT_STREAM_PUSH_DATA_FULL = 0x87
+-- push data for INT_LEFT and INT_RIGHT
+local ID_OUT_REPORT_STREAM_PUSH_DATA_INT_2CH = 0x88
+-- report 0x87 but with an explicit length byte (when not pushing full length)
+local ID_OUT_REPORT_STREAM_PUSH_DATA_PARTIAL = 0x89
 
 local interrupt_report_ids = {
   [ID_TRITON_LIZARD_MOUSE] = 'ID_TRITON_LIZARD_MOUSE',
@@ -86,6 +93,10 @@ local interrupt_report_ids = {
   [ID_OUT_REPORT_HAPTIC_LFO_TONE] = 'ID_OUT_REPORT_HAPTIC_LFO_TONE',
   [ID_OUT_REPORT_HAPTIC_LOG_SWEEP] = 'ID_OUT_REPORT_HAPTIC_LOG_SWEEP',
   [ID_OUT_REPORT_HAPTIC_SCRIPT] = 'ID_OUT_REPORT_HAPTIC_SCRIPT',
+  [ID_OUT_REPORT_STREAM_CONFIGURE] = 'ID_OUT_REPORT_STREAM_CONFIGURE',
+  [ID_OUT_REPORT_STREAM_PUSH_DATA_FULL] = 'ID_OUT_REPORT_STREAM_PUSH_DATA_FULL',
+  [ID_OUT_REPORT_STREAM_PUSH_DATA_INT_2CH] = 'ID_OUT_REPORT_STREAM_PUSH_DATA_INT_2CH',
+  [ID_OUT_REPORT_STREAM_PUSH_DATA_PARTIAL] = 'ID_OUT_REPORT_STREAM_PUSH_DATA_PARTIAL',
 }
 
 local setting_ids = {
@@ -137,15 +148,43 @@ local audio_feedback_actuator_table = {
 local f_audio_feedback = ProtoField.bytes('hid_sctrl.audio_feedback', 'Audio buffer feedback')
 local f_audio_feedback_actuator = ProtoField.uint8('hid_sctrl.audio_feedback.actuator_id', 'Actuator', base.DEC, audio_feedback_actuator_table)
 local f_audio_feedback_status = ProtoField.uint8('hid_sctrl.audio_feedback.status', 'Status')
-local f_audio_feedback_status_0 = ProtoField.bool('hid_sctrl.audio_feedback.status.b0', 'Buffer overrun', 8, nil, 1 << 0)
-local f_audio_feedback_status_1 = ProtoField.bool('hid_sctrl.audio_feedback.status.b1', 'Buffer underrun', 8, nil, 1 << 1)
+local f_audio_feedback_status_1 = ProtoField.bool('hid_sctrl.audio_feedback.status.b1', 'Buffer overrun', 8, nil, 1 << 0)
+local f_audio_feedback_status_2 = ProtoField.bool('hid_sctrl.audio_feedback.status.b2', 'Buffer underrun', 8, nil, 1 << 1)
 -- this is set once after crossing from enough data to not enough data
-local f_audio_feedback_status_2 = ProtoField.bool('hid_sctrl.audio_feedback.status.b2', 'Buffer needs more data', 8, nil, 1 << 2)
-local f_audio_feedback_status_3 = ProtoField.bool('hid_sctrl.audio_feedback.status.b3', 'Buffer has enough data', 8, nil, 1 << 3)
-local f_audio_feedback_status_4 = ProtoField.bool('hid_sctrl.audio_feedback.status.b4', 'Bit 4', 8, nil, 1 << 4)
-local f_audio_feedback_status_5 = ProtoField.bool('hid_sctrl.audio_feedback.status.b5', 'Bit 5', 8, nil, 1 << 5)
-local f_audio_feedback_status_6 = ProtoField.bool('hid_sctrl.audio_feedback.status.b6', 'Bit 6', 8, nil, 1 << 6)
-local f_audio_feedback_status_7 = ProtoField.bool('hid_sctrl.audio_feedback.status.b7', 'Bit 7', 8, nil, 1 << 7)
+local f_audio_feedback_status_3 = ProtoField.bool('hid_sctrl.audio_feedback.status.b3', 'Stream needs more data', 8, nil, 1 << 2)
+local f_audio_feedback_status_4 = ProtoField.bool('hid_sctrl.audio_feedback.status.b4', 'Stream has enough data', 8, nil, 1 << 3)
+local f_audio_feedback_status_5 = ProtoField.bool('hid_sctrl.audio_feedback.status.b5', 'Configuration rejected because invalid', 8, nil, 1 << 4)
+local f_audio_feedback_status_6 = ProtoField.bool('hid_sctrl.audio_feedback.status.b6', 'Configuration accepted', 8, nil, 1 << 5)
+local f_audio_feedback_status_7 = ProtoField.bool('hid_sctrl.audio_feedback.status.b7', 'Configuration rejected because stream is already active', 8, nil, 1 << 6)
+local f_audio_feedback_status_8 = ProtoField.bool('hid_sctrl.audio_feedback.status.b8', 'Bit 8', 8, nil, 1 << 7)
+
+local f_audio_configure = ProtoField.bytes('hid_sctrl.audio_configure', 'Audio stream configuration')
+local audio_configure_op_table = { [1] = 'STOP', [2] = 'CONFIGURE' }
+local f_audio_configure_operation = ProtoField.uint8('hid_sctrl.audio_configure.op', 'Operation', base.DEC, audio_configure_op_table)
+local audio_configure_target_table = {
+  [0] = 'INT_LEFT',
+  [1] = 'INT_RIGHT',
+  [2] = 'INT_BOTH',
+  [3] = 'TP_LEFT',
+  [4] = 'TP_RIGHT',
+  [5] = 'TP_BOTH',
+}
+local f_audio_configure_target = ProtoField.uint8('hid_sctrl.audio_configure.target', 'Target', base.DEC, audio_configure_target_table)
+local audio_configure_param_table = {
+  [0] = '8 KHz 16-bit PCM',
+  [1] = '4 KHz 16-bit PCM',
+  [2] = '2 KHz 16-bit PCM',
+  [3] = '1 KHz 16-bit PCM',
+  [4] = '8 KHz 8-bit PCM',
+  [5] = '4 KHz 8-bit PCM',
+  [6] = '2 KHz 8-bit PCM',
+  [7] = '1 KHz 8-bit PCM',
+  [8] = '8 KHz u-law PCM',
+  [9] = '4 KHz u-law PCM',
+  [10] = '2 KHz u-law PCM',
+  [11] = '1 KHz u-law PCM',
+}
+local f_audio_configure_param = ProtoField.uint8('hid_sctrl.audio_configure.param', 'Parameters', base.DEC, audio_configure_param_table)
 
 local f_haptic_rumble = ProtoField.bytes('hid_sctrl.haptic_rumble', 'Haptic rumble')
 local f_haptic_rumble_type = ProtoField.uint8('hid_sctrl.haptic_rumble.type', 'Type', base.DEC)
@@ -304,7 +343,6 @@ local fields_table = {
   f_audio_feedback,
   f_audio_feedback_actuator,
   f_audio_feedback_status,
-  f_audio_feedback_status_0,
   f_audio_feedback_status_1,
   f_audio_feedback_status_2,
   f_audio_feedback_status_3,
@@ -312,6 +350,12 @@ local fields_table = {
   f_audio_feedback_status_5,
   f_audio_feedback_status_6,
   f_audio_feedback_status_7,
+  f_audio_feedback_status_8,
+
+  f_audio_configure,
+  f_audio_configure_operation,
+  f_audio_configure_target,
+  f_audio_configure_param,
 
   f_haptic_rumble,
   f_haptic_rumble_type,
@@ -661,7 +705,6 @@ local function dissect_interrupt_report_payload(direction, tvb, pinfo, root)
     local _, actuator = feedback:add_packet_field(f_audio_feedback_actuator, tvb(offset, 1), ENC_LITTLE_ENDIAN)
     offset = offset + 1
     local bf = feedback:add(f_audio_feedback_status, tvb(offset, 1))
-    bf:add(f_audio_feedback_status_0, tvb(offset, 1))
     bf:add(f_audio_feedback_status_1, tvb(offset, 1))
     bf:add(f_audio_feedback_status_2, tvb(offset, 1))
     bf:add(f_audio_feedback_status_3, tvb(offset, 1))
@@ -669,8 +712,26 @@ local function dissect_interrupt_report_payload(direction, tvb, pinfo, root)
     bf:add(f_audio_feedback_status_5, tvb(offset, 1))
     bf:add(f_audio_feedback_status_6, tvb(offset, 1))
     bf:add(f_audio_feedback_status_7, tvb(offset, 1))
+    bf:add(f_audio_feedback_status_8, tvb(offset, 1))
     offset = offset + 1
     pinfo.cols.info = string.format('Audio feedback, %s', get_enum_or_dec(audio_feedback_actuator_table, actuator))
+  elseif report_id == ID_OUT_REPORT_STREAM_CONFIGURE then
+    local config = tree:add(f_audio_configure, tvb(offset, 3))
+    local _, operation = config:add_packet_field(f_audio_configure_operation, tvb(offset, 1), ENC_LITTLE_ENDIAN)
+    offset = offset + 1
+    local _, target = config:add_packet_field(f_audio_configure_target, tvb(offset, 1), ENC_LITTLE_ENDIAN)
+    offset = offset + 1
+    if operation == 2 then
+      local _, param = config:add_packet_field(f_audio_configure_param, tvb(offset, 1), ENC_LITTLE_ENDIAN)
+      offset = offset + 1
+      pinfo.cols.info = string.format(
+        'Stream configure %s: %s',
+        get_enum_or_dec(audio_configure_target_table, target),
+        get_enum_or_dec(audio_configure_param_table, param)
+      )
+    else
+      pinfo.cols.info = string.format('Stream stop %s', get_enum_or_dec(audio_configure_target_table, target))
+    end
   elseif report_id == ID_TRITON_LIZARD_KEYBOARD then
     -- send lizard mode to native dissector
     pinfo.cols.info = 'Lizard mode keyboard'

@@ -88,7 +88,22 @@ gain values seem clamped to the range -23 to 24
 report 0x86:
 - byte 0: operation: 1 = cancel effect 6, 2 = setup effect 6
 - byte 1: side
-- byte 2: param for operation 2
+- byte 2: for operation 2, effect 6 stream mode
+  - param 0, 4, 8 can only be used with internal haptics (not touchpad) because 8 khz > 4 khz
+
+effect 6 stream modes (`haptic_effect_6_data` offset 0x18):
+- 0:  8 khz, 16 bit
+- 1:  4 khz, 16 bit
+- 2:  2 khz, 16 bit
+- 3:  1 khz, 16 bit
+- 4:  8 khz, 8 bit
+- 5:  4 khz, 8 bit
+- 6:  2 khz, 8 bit
+- 7:  1 khz, 8 bit
+- 8:  8 khz, 8 bit u-law
+- 9:  4 khz, 8 bit u-law
+- 10: 2 khz, 8 bit u-law
+- 11: 1 khz, 8 bit u-law
 
 report 0x44: seems to be some kind of haptics ack or flow control
 - byte 0: which actuator
@@ -97,6 +112,14 @@ report 0x44: seems to be some kind of haptics ack or flow control
   - TP_LEFT: 3
   - TP_RIGHT: 4
 - byte 1: bitfield
+  - 1: buffer overrun
+  - 2: buffer underrun
+  - 3: stream needs more data
+  - 4: stream has enough data
+  - 5: configuration rejected (invalid)
+  - 6: configuration accepted
+  - 7: configuration rejected (already running)
+  - 8: unused?
 
 ### Firmware updater
 
