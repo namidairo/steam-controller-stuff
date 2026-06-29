@@ -13,6 +13,7 @@ Problems:
 - huge pile of hacks
 - only works when wired probably because pcm s16le is simply too much bandwidth
   - maybe try pcm s8 or ulaw instead?
+- puck has `bInterval = 2` or 500 Hz USB polling rate. controller has `bInterval = 1` or 1000 Hz USB polling rate. puck quite literally does not have enough bandwidth to send stereo s16le. probably should send either mono s16le or s8/ulaw instead.
 
 ## Useful links to other projects
 
