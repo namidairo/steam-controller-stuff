@@ -104,7 +104,12 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
         }
     });
 
-    // HACK: wait for reader to actually read some data
+    // configure for 8khz s16le pcm, both INT_LEFT and INT_RIGHT
+    hid_set_output_report(&hidraw, &[0x86, 0x02, 0x02, 0x00]).wrap_err("configuring stream")?;
+
+    // HACK: wait for reader to actually read some data and also for the controller to process
+    //       the configuration request.
+    //       ideally we'd wait for ack before starting. TODO.
     std::thread::sleep(Duration::from_millis(100));
 
     let mut next_streamer = 0;
@@ -153,8 +158,11 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
             }
         }
 
-        // HACK: idk
-        if tick_counter > 32 || tick_counter.is_multiple_of(2) {
+        // HACK: need to slow start or you'll get an overrun before anything even starts playing.
+        //       i think this is because stream start is triggered by there being enough data in
+        //       the buffer, but the stream itself takes some time to start. by the time the stream
+        //       actually starts, you'd have overrun the buffer already.
+        if tick_counter > 64 || tick_counter.is_multiple_of(3) {
             // TODO: less shit code?
             for _ in 0..streamers.len() {
                 let len = streamers[next_streamer].poll_send(&mut out_buf);
@@ -167,21 +175,6 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
                 if len > 0 {
                     break;
                 }
-            }
-        }
-
-        if tick_counter == 0 {
-            // configure for 8khz s16le pcm, both INT_LEFT and INT_RIGHT
-            // seems like you have to send this after enqueueing some data or the
-            // "needs more data" bit never arrives
-            hid_set_output_report(&hidraw, &[0x86, 0x02, 0x02, 0x00])
-                .wrap_err("configuring stream")?;
-        }
-
-        // HACK: if you don't do this for some reason it never sends "needs more data" either
-        if tick_counter < 32 {
-            for s in &mut streamers {
-                s.cork = false;
             }
         }
 
