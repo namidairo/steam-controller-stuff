@@ -28,7 +28,7 @@ pub struct HapticsStreamer {
     pub baseline_rate: isize,
 
     // THIS IS A BUCKET
-    pub bucket: isize,
+    pub bucket: f32,
     // pub initial_bucket: isize,
     pub is_low: bool,
 }
@@ -52,7 +52,7 @@ impl HapticsStreamer {
             baseline_rate,
 
             // initial_bucket,
-            bucket: 0,
+            bucket: 0.,
             is_low: true,
         }
     }
@@ -60,7 +60,7 @@ impl HapticsStreamer {
     pub fn handle_status(&mut self, status: StreamStatus) {
         if status.contains(StreamStatus::BUFFER_OVERRUN) {
             warn!("buffer overrun reported");
-            self.bucket -= self.baseline_rate * 4;
+            self.bucket -= (self.baseline_rate * 4) as f32;
         }
         if status.contains(StreamStatus::STREAM_STOPPED) {
             error!("stream stop reported");
@@ -130,11 +130,10 @@ impl HapticsStreamer {
         }
 
         let increment = self.baseline_rate * (self.tickrate as isize);
-        self.bucket += increment;
         if self.is_low {
-            self.bucket += increment / 8;
+            self.bucket += increment as f32 * 1.1;
         } else {
-            self.bucket -= increment / 8;
+            self.bucket += increment as f32 * 0.91;
         }
         debug!("bucket is {}", self.bucket);
     }
@@ -148,7 +147,7 @@ impl HapticsStreamer {
         }
 
         let send_len = buf.len() - 2;
-        if (self.bucket.max(0) as usize) < send_len {
+        if (self.bucket.max(0.) as usize) < send_len {
             // bucket not full enough
             return 0;
         }
@@ -161,7 +160,7 @@ impl HapticsStreamer {
             return 0;
         }
 
-        self.bucket -= len as isize;
+        self.bucket -= len as f32;
 
         len + 2
     }

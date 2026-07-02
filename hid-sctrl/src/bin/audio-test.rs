@@ -48,7 +48,7 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
     use rustix::time::{ClockId, Timespec, clock_gettime};
 
     // target tick rate in ms
-    const TICKRATE: u64 = 1;
+    const TICKRATE: u64 = 2;
     const TICKRATE_TS: Timespec = Timespec {
         tv_sec: 0,
         tv_nsec: (TICKRATE as i64) * 1_000_000,
@@ -71,20 +71,20 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
     let (left_send, left_recv) = async_channel::bounded::<Bytes>(64);
     let (right_send, right_recv) = async_channel::bounded::<Bytes>(64);
 
-    let bytes_per_sample = 2;
+    let bytes_per_sample = 1;
     let samples_per_ms = 8;
     let baseline_rate = bytes_per_sample * samples_per_ms;
     let mut streamers = [
-        HapticsStreamer::new(0, left_recv, TICKRATE, baseline_rate), // INT_LEFT
-        HapticsStreamer::new(4, right_recv, TICKRATE, baseline_rate), // INT_RIGHT
-                                                                     // HapticsStreamer::new(2, left_recv, TICKRATE, baseline_rate), // INT_BOTH
+        // HapticsStreamer::new(0, left_recv, TICKRATE, baseline_rate), // INT_LEFT
+        // HapticsStreamer::new(4, right_recv, TICKRATE, baseline_rate), // INT_RIGHT
+        HapticsStreamer::new(2, left_recv, TICKRATE, baseline_rate), // INT_BOTH
     ];
 
     let mut in_file = std::fs::File::open(&args.audio_file).wrap_err("opening pcm file")?;
 
     std::thread::spawn(move || {
-        fn transform_sample(sample: i16) -> i16 {
-            (sample as f32 * 0.9) as i16
+        fn transform_sample(sample: i8) -> i8 {
+            (sample as f32 * 0.9) as i8
         }
 
         let mut buf = [0u8; 65536];
@@ -104,9 +104,9 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
             let mut left_buf = Vec::with_capacity(bytes_read / 2);
             let mut right_buf = Vec::with_capacity(bytes_read / 2);
 
-            for mut chunk in read_slice.chunks_exact(4) {
-                let left_sample = chunk.get_i16_le();
-                let right_sample = chunk.get_i16_le();
+            for mut chunk in read_slice.chunks_exact(2) {
+                let left_sample = chunk.get_i8();
+                let right_sample = chunk.get_i8();
 
                 left_buf.extend(transform_sample(left_sample).to_le_bytes());
                 right_buf.extend(transform_sample(right_sample).to_le_bytes());
@@ -115,14 +115,16 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
             left_send
                 .send_blocking(Bytes::from_owner(left_buf))
                 .expect("receiver gone");
+            /*
             right_send
                 .send_blocking(Bytes::from_owner(right_buf))
                 .expect("receiver gone");
+                */
         }
     });
 
     // configure for 8khz s8 pcm, both INT_LEFT and INT_RIGHT
-    hid_set_output_report(&hidraw, &[0x86, 0x02, 0x02, 0x00]).wrap_err("configuring stream")?;
+    hid_set_output_report(&hidraw, &[0x86, 0x02, 0x02, 0x04]).wrap_err("configuring stream")?;
 
     // HACK: wait for reader to actually read some data and also for the controller to process
     //       the configuration request.
@@ -167,7 +169,7 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
 
                     match target {
                         0 => streamers[0].handle_status(status),
-                        1 => streamers[1].handle_status(status),
+                        // 1 => streamers[1].handle_status(status),
                         n => debug!("ignoring unknown target {n}"),
                     }
                 }

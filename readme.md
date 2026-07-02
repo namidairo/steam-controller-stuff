@@ -5,7 +5,7 @@ Place to document the protocol of the new Steam Controller (apparently codenamed
 ## How to run the stupid barely working audio player
 
 - Figure out which hidraw device your controller is
-- Convert audio file to 8 kHZ s16le PCM: `ffmpeg -i <your-audio-file> -f s16le -c:a pcm_s16le -ar 8000 -ac 2 output.pcm`
+- Convert audio file to 8 kHZ s8 PCM: `ffmpeg -i <your-audio-file> -f s8 -c:a pcm_s8 -ar 8000 -ac 2 output.pcm`
 - Run the stupid thing: `RUST_LOG=trace cargo run --bin audio-test -- test-audio /dev/hidrawN output.pcm` (replace `hidrawN` with the correct device node)
 
 Problems:
@@ -14,6 +14,8 @@ Problems:
 - only works when wired probably because pcm s16le is simply too much bandwidth
   - maybe try pcm s8 or ulaw instead?
 - puck has `bInterval = 2` or 500 Hz USB polling rate. controller has `bInterval = 1` or 1000 Hz USB polling rate. puck quite literally does not have enough bandwidth to send stereo s16le. probably should send either mono s16le or s8/ulaw instead.
+  - you are on a branch that sends mono s8 (right channel entirely ignored). wireless kinda works.
+  - weird noise issue only over wireless. not sure why.
 
 ## Useful links to other projects
 
