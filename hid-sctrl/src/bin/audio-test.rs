@@ -1,14 +1,14 @@
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::{Buf, Bytes};
 use clap::Parser;
 use eyre::Context;
+use hidapi::HidApi;
 use hid_sctrl::haptics::{HapticsStreamer, StreamStatus};
 use hid_sctrl::io::{hid_get_input_report, hid_set_output_report};
-use rustix::io::Errno;
 use tracing::{debug, info, trace, warn};
 
 #[derive(clap::Parser)]
@@ -24,15 +24,13 @@ enum Commands {
 
 #[derive(clap::Args)]
 struct TestAudioArgs {
-    /// hidraw device
-    hidraw_device: PathBuf,
     /// audio file
     audio_file: PathBuf,
 }
 
 fn main() -> eyre::Result<ExitCode> {
     hid_sctrl::common::initialize_logging();
-    info!("hello");
+    info!("Hello World");
 
     let args = Args::parse();
     match args.command {
@@ -43,25 +41,28 @@ fn main() -> eyre::Result<ExitCode> {
 const HID_REPORT_SIZE: usize = 64;
 
 fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
-    use rustix::fs::{self, OFlags};
-    use rustix::thread::clock_nanosleep_absolute;
-    use rustix::time::{ClockId, Timespec, clock_gettime};
-
     // target tick rate in ms
     const TICKRATE: u64 = 1;
-    const TICKRATE_TS: Timespec = Timespec {
-        tv_sec: 0,
-        tv_nsec: (TICKRATE as i64) * 1_000_000,
-    };
+    const TICKRATE_DURATION: Duration = Duration::from_millis(TICKRATE);
 
-    let mut wake_time = clock_gettime(ClockId::Monotonic);
+    let mut wake_time = Instant::now();
 
-    let hidraw = fs::open(
-        &args.hidraw_device,
-        OFlags::RDWR | OFlags::NONBLOCK,
-        fs::Mode::empty(),
-    )
-    .wrap_err("open hidraw file failed")?;
+    let api = HidApi::new().wrap_err("opening hidapi instance")?;
+    
+    // Device list
+    let devices = api.device_list();
+    info!("Available devices:");
+    for device in devices {
+        info!(" - {:#04x}: {:#04x} Usage: {:#04x}", device.vendor_id(), device.product_id(), device.usage());
+        // Print usage ID as well
+        if device.vendor_id() == 0x28DE && device.product_id() == 0x1302 {
+            info!("   -> Found target device!");
+        }
+    }
+
+    let mut hid_device: hidapi::HidDevice = api
+        .open(0x28DE, 0x1302)
+        .wrap_err("opening hid device failed")?;
 
     let mut in_buf = [0u8; HID_REPORT_SIZE];
     let mut out_buf = [0u8; HID_REPORT_SIZE];
@@ -122,7 +123,7 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
     });
 
     // configure for 8khz s8 pcm, both INT_LEFT and INT_RIGHT
-    hid_set_output_report(&hidraw, &[0x86, 0x02, 0x02, 0x00]).wrap_err("configuring stream")?;
+    hid_set_output_report(&mut hid_device, &[0x86, 0x02, 0x02, 0x00]).wrap_err("configuring stream")?;
 
     // HACK: wait for reader to actually read some data and also for the controller to process
     //       the configuration request.
@@ -132,20 +133,18 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
     let mut next_streamer = 0;
 
     loop {
-        let loop_start = clock_gettime(ClockId::Monotonic);
-        let error = loop_start
-            .checked_sub(wake_time)
-            .expect("time travel is forbidden");
-        if error > TICKRATE_TS {
+        let loop_start = Instant::now();
+        let error = loop_start.saturating_duration_since(wake_time);
+        if error > TICKRATE_DURATION {
             // joever
             warn!("ran out of time, resetting! {error:?} behind");
-            wake_time = clock_gettime(ClockId::Monotonic);
+            wake_time = Instant::now();
         }
-        wake_time += TICKRATE_TS;
+        wake_time += TICKRATE_DURATION;
 
         'handle_report: {
             let Some(in_report) =
-                hid_get_input_report(&hidraw, &mut in_buf).wrap_err("reading input report")?
+                hid_get_input_report(&mut hid_device, &mut in_buf).wrap_err("reading input report")?
             else {
                 break 'handle_report;
             };
@@ -184,7 +183,7 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
             let len = streamers[next_streamer].poll_send(&mut out_buf);
             if len > 0 {
                 debug!("sending buffer for {}", streamers[next_streamer].id);
-                hid_set_output_report(&hidraw, &out_buf[..len])
+                hid_set_output_report(&mut hid_device, &out_buf[..len])
                     .wrap_err("writing output report")?;
             }
             next_streamer = (next_streamer + 1) % streamers.len();
@@ -208,12 +207,8 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
             tick_counter += TICKRATE;
         }
 
-        while let Err(err) = clock_nanosleep_absolute(ClockId::Monotonic, &wake_time) {
-            if matches!(err, Errno::INTR) {
-                continue;
-            }
-
-            panic!("insomnia: {err}");
+        if let Some(delay) = wake_time.checked_duration_since(Instant::now()) {
+            std::thread::sleep(delay);
         }
     }
 }
