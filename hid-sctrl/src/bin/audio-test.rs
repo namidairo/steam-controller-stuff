@@ -49,16 +49,6 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
 
     let api = HidApi::new().wrap_err("opening hidapi instance")?;
     
-    // Device list
-    let devices = api.device_list();
-    info!("Available devices:");
-    for device in devices {
-        info!(" - {:#04x}: {:#04x} Usage: {:#04x}", device.vendor_id(), device.product_id(), device.usage());
-        // Print usage ID as well
-        if device.vendor_id() == 0x28DE && device.product_id() == 0x1302 {
-            info!("   -> Found target device!");
-        }
-    }
 
     let mut hid_device: hidapi::HidDevice = api
         .open(0x28DE, 0x1302)
