@@ -68,11 +68,11 @@ impl HapticsStreamer {
             self.is_low = true;
         }
         if status.contains(StreamStatus::NEEDS_MORE_DATA) {
-            info!("received buffer low");
+            //info!("received buffer low");
             self.is_low = true;
         }
         if status.contains(StreamStatus::HAS_ENOUGH_DATA) {
-            info!("received buffer high");
+            //info!("received buffer high");
             self.is_low = false;
         }
         if status.contains(StreamStatus::CONFIG_REJECTED_INVALID) {
