@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -6,9 +7,9 @@ use std::time::{Duration, Instant};
 use bytes::{Buf, Bytes};
 use clap::Parser;
 use eyre::Context;
-use hidapi::HidApi;
 use hid_sctrl::haptics::{HapticsStreamer, StreamStatus};
 use hid_sctrl::io::{hid_get_input_report, hid_set_output_report};
+use hidapi::HidApi;
 use tracing::{debug, info, trace, warn};
 
 #[derive(clap::Parser)]
@@ -48,12 +49,24 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
     let mut wake_time = Instant::now();
 
     let api = HidApi::new().wrap_err("opening hidapi instance")?;
-    
+
+    let mut hid_path: Option<&CStr> = None;
+
+    // List devices with usage pages and usage ids.
+    for device in api.device_list() {
+        if device.vendor_id() == 0x28DE
+            && device.product_id() == 0x1302
+            && device.usage_page() == 0xFF00
+        {
+            hid_path = Some(device.path());
+        }
+    }
+
+    let device_path = hid_path.ok_or(eyre::eyre!("device not found"))?;
 
     let mut hid_device: hidapi::HidDevice = api
-        .open(0x28DE, 0x1302)
+        .open_path(device_path)
         .wrap_err("opening hid device failed")?;
-
     let mut in_buf = [0u8; HID_REPORT_SIZE];
     let mut out_buf = [0u8; HID_REPORT_SIZE];
 
@@ -113,7 +126,8 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
     });
 
     // configure for 8khz s8 pcm, both INT_LEFT and INT_RIGHT
-    hid_set_output_report(&mut hid_device, &[0x86, 0x02, 0x02, 0x00]).wrap_err("configuring stream")?;
+    hid_set_output_report(&mut hid_device, &[0x86, 0x02, 0x02, 0x00])
+        .wrap_err("configuring stream")?;
 
     // HACK: wait for reader to actually read some data and also for the controller to process
     //       the configuration request.
@@ -133,8 +147,8 @@ fn test_audio(args: TestAudioArgs) -> eyre::Result<ExitCode> {
         wake_time += TICKRATE_DURATION;
 
         'handle_report: {
-            let Some(in_report) =
-                hid_get_input_report(&mut hid_device, &mut in_buf).wrap_err("reading input report")?
+            let Some(in_report) = hid_get_input_report(&mut hid_device, &mut in_buf)
+                .wrap_err("reading input report")?
             else {
                 break 'handle_report;
             };
